@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# 共研 GongYan
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+科研小团体的私密互助平台（邀请制）。
 
-Currently, two official plugins are available:
+## 技术栈
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 18 + TypeScript + Vite
+- Tailwind CSS + shadcn/ui
+- React Router v7
+- Zustand (状态管理)
+- Supabase (Auth + Database + Realtime)
 
-## React Compiler
+## 快速开始
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# 安装依赖
+npm install
 
-## Expanding the ESLint configuration
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env，填入你的 Supabase URL 和 anon key
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# 启动开发服务器
+npm run dev
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# 构建
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 数据库初始化
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. 在 Supabase Dashboard 中创建新项目
+2. 在 SQL Editor 中运行 `supabase/migrations/001_initial_schema.sql`
+3. 运行 `supabase/seed.sql` 中的第一步（插入种子邀请码）
+4. 使用种子邀请码注册第一个用户
+5. 在 SQL Editor 中运行 seed.sql 的第二步（提升为管理员）
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 项目结构
+
+```
+src/
+├── components/
+│   ├── auth/        # 路由守卫
+│   ├── board/       # 看板组件
+│   ├── layout/      # 布局组件
+│   ├── shared/      # 共享组件
+│   └── ui/          # shadcn/ui 组件
+├── hooks/           # 自定义 hooks
+├── lib/
+│   ├── api/         # Supabase API 函数
+│   ├── constants.ts # 常量配置
+│   ├── supabase.ts  # Supabase 客户端
+│   └── utils.ts     # 工具函数
+├── pages/           # 页面组件
+│   └── admin/       # 管理员页面
+├── store/           # Zustand stores
+└── types/           # TypeScript 类型
 ```
