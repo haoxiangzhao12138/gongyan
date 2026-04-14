@@ -36,6 +36,7 @@ export interface Profile {
   badge_level: BadgeLevel
   help_given_count: number
   help_received_count: number
+  github_username: string | null
   invited_by: string | null
   created_at: string
   updated_at: string
@@ -97,4 +98,61 @@ export interface ActivityLog {
   metadata: Record<string, unknown>
   created_at: string
   actor?: Profile
+}
+
+export type ShowcaseItemType = 'paper' | 'github' | 'link'
+
+export interface ShowcaseItem {
+  id: string
+  user_id: string
+  item_type: ShowcaseItemType
+  title: string
+  url: string
+  description: string
+  citation: string | null
+  stars_count: number | null
+  platform_label: string | null
+  like_count: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ShowcaseLike {
+  id: string
+  item_id: string
+  user_id: string
+  created_at: string
+}
+
+export type HelpLinkPlatform =
+  | 'github'
+  | 'huggingface'
+  | 'zhihu'
+  | 'xiaohongshu'
+  | 'wechat'
+  | 'bilibili'
+  | 'twitter'
+  | 'other'
+
+export interface ShowcaseHelpLink {
+  id: string
+  item_id: string
+  title: string
+  url: string
+  platform: HelpLinkPlatform
+  action_label: string
+  completion_count: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  // joined fields for StarBoard
+  showcase_item?: ShowcaseItem & { user?: Profile }
+}
+
+export interface HelpCompletion {
+  id: string
+  link_id: string
+  helper_id: string
+  created_at: string
 }

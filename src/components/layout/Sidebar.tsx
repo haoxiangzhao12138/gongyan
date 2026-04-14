@@ -7,6 +7,7 @@ import {
   Shield,
   Mail,
   LogOut,
+  Star,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -42,6 +43,10 @@ export function Sidebar() {
         <NavLink to="/board" className={navLinkClass}>
           <MessageSquareText className="h-4 w-4" />
           互助看板
+        </NavLink>
+        <NavLink to="/star-board" className={navLinkClass}>
+          <Star className="h-4 w-4" />
+          互助广场
         </NavLink>
         <NavLink to={`/user/${profile?.id}`} className={navLinkClass}>
           <User className="h-4 w-4" />

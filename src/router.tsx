@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
+import AuthCallback from '@/pages/AuthCallback'
 import Pending from '@/pages/Pending'
 import Dashboard from '@/pages/Dashboard'
 import Board from '@/pages/Board'
@@ -15,6 +16,7 @@ import ProfileEdit from '@/pages/ProfileEdit'
 import Notifications from '@/pages/Notifications'
 import InviteManagement from '@/pages/InviteManagement'
 import Approvals from '@/pages/admin/Approvals'
+import StarBoard from '@/pages/StarBoard'
 
 export const router = createBrowserRouter([
   {
@@ -24,6 +26,10 @@ export const router = createBrowserRouter([
   {
     path: '/register',
     element: <Register />,
+  },
+  {
+    path: '/auth/callback',
+    element: <AuthCallback />,
   },
   {
     path: '/pending',
@@ -51,6 +57,10 @@ export const router = createBrowserRouter([
       {
         path: 'board/:postId',
         element: <PostDetail />,
+      },
+      {
+        path: 'star-board',
+        element: <StarBoard />,
       },
       {
         path: 'user/:userId',

@@ -13,7 +13,7 @@ export async function getProfile(userId: string) {
 
 export async function updateProfile(
   userId: string,
-  updates: Partial<Pick<Profile, 'full_name' | 'bio' | 'research_field' | 'institution' | 'avatar_url'>>
+  updates: Partial<Pick<Profile, 'full_name' | 'bio' | 'research_field' | 'institution' | 'avatar_url' | 'github_username'>>
 ) {
   const { data, error } = await supabase
     .from('profiles')

@@ -4,6 +4,8 @@ import { useAuthStore } from '@/store/authStore'
 import { getProfile } from '@/lib/api/profiles'
 import { fetchPosts } from '@/lib/api/helpPosts'
 import { PostCard } from '@/components/board/PostCard'
+import { ShowcaseSection } from '@/components/showcase/ShowcaseSection'
+
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,6 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Pencil, HandHelping, HelpCircle, Building2, FlaskConical } from 'lucide-react'
 import type { Profile as ProfileType, HelpPost } from '@/types/database'
+import { GitHubIcon } from '@/components/shared/GitHubIcon'
 
 export default function Profile() {
   const { userId } = useParams<{ userId: string }>()
@@ -27,10 +30,10 @@ export default function Profile() {
       setLoading(true)
       const [profileResult, postsResult] = await Promise.all([
         getProfile(userId),
-        fetchPosts({ limit: 5 }),
+        fetchPosts({ author_id: userId, limit: 5 }),
       ])
       setProfile(profileResult.data)
-      setPosts(postsResult.data.filter((p) => p.author_id === userId))
+      setPosts(postsResult.data)
       setLoading(false)
     }
     load()
@@ -81,6 +84,17 @@ export default function Profile() {
                   {profile.research_field}
                 </p>
               )}
+              {profile.github_username && (
+                <a
+                  href={`https://github.com/${profile.github_username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mt-0.5"
+                >
+                  <GitHubIcon className="h-3.5 w-3.5" />
+                  @{profile.github_username}
+                </a>
+              )}
               {profile.bio && (
                 <p className="text-sm text-muted-foreground mt-2">{profile.bio}</p>
               )}
@@ -106,6 +120,10 @@ export default function Profile() {
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+
+      <ShowcaseSection userId={profile.id} currentUserId={currentUser?.id} />
 
       <Separator />
 

@@ -22,15 +22,19 @@ export async function validateInvitationCode(
 
 export async function markInvitationUsed(
   invitationId: string,
-  userId: string
+  userId?: string
 ): Promise<{ error: string | null }> {
+  const updates: Record<string, unknown> = {
+    used_at: new Date().toISOString(),
+    is_active: false,
+  }
+  if (userId) {
+    updates.used_by = userId
+  }
+
   const { error } = await supabase
     .from('invitations')
-    .update({
-      used_by: userId,
-      used_at: new Date().toISOString(),
-      is_active: false,
-    })
+    .update(updates)
     .eq('id', invitationId)
 
   return { error: error?.message ?? null }

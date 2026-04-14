@@ -1,30 +1,26 @@
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { validateInvitationCode, markInvitationUsed } from '@/lib/api/invitations'
-import { updateProfile } from '@/lib/api/profiles'
-import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
+import { MailCheck } from 'lucide-react'
 import type { Invitation } from '@/types/database'
 
-type Step = 'invite' | 'info'
+type Step = 'invite' | 'info' | 'check_email'
 
 export default function Register() {
   const { session, profile, signUp } = useAuthStore()
-  const navigate = useNavigate()
   const [step, setStep] = useState<Step>('invite')
   const [loading, setLoading] = useState(false)
 
-  // Step 1: invite code
   const [inviteCode, setInviteCode] = useState('')
   const [validatedInvitation, setValidatedInvitation] = useState<Invitation | null>(null)
 
-  // Step 2: user info
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -34,6 +30,10 @@ export default function Register() {
 
   if (session && profile?.status === 'approved') {
     return <Navigate to="/" replace />
+  }
+
+  if (session && profile?.status === 'pending') {
+    return <Navigate to="/pending" replace />
   }
 
   const handleValidateCode = async (e: React.FormEvent) => {
@@ -59,7 +59,14 @@ export default function Register() {
 
     setLoading(true)
 
-    const { error } = await signUp(email, password, fullName)
+    // Store profile info + invitation in signUp metadata
+    // so we can retrieve it after email confirmation
+    const { error } = await signUp(email, password, fullName, {
+      institution,
+      research_field: researchField,
+      bio,
+      invitation_id: validatedInvitation.id,
+    })
 
     if (error) {
       toast.error('注册失败', { description: error })
@@ -67,24 +74,10 @@ export default function Register() {
       return
     }
 
-    // Wait a moment for the auth trigger to create the profile
-    await new Promise((r) => setTimeout(r, 1000))
+    // Mark invitation as used immediately to prevent reuse
+    await markInvitationUsed(validatedInvitation.id)
 
-    const { data: { session: newSession } } = await supabase.auth.getSession()
-
-    if (newSession?.user) {
-      await updateProfile(newSession.user.id, {
-        full_name: fullName,
-        institution,
-        research_field: researchField,
-        bio,
-      })
-
-      await markInvitationUsed(validatedInvitation.id, newSession.user.id)
-    }
-
-    toast.success('注册成功', { description: '请等待管理员审批' })
-    navigate('/pending')
+    setStep('check_email')
     setLoading(false)
   }
 
@@ -97,7 +90,9 @@ export default function Register() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight">加入共研</h1>
           <p className="text-sm text-muted-foreground">
-            {step === 'invite' ? '请输入邀请码' : '填写你的信息'}
+            {step === 'invite' && '请输入邀请码'}
+            {step === 'info' && '填写你的信息'}
+            {step === 'check_email' && '验证你的邮箱'}
           </p>
         </div>
 
@@ -134,7 +129,7 @@ export default function Register() {
           <Card>
             <CardHeader>
               <CardTitle>完善信息</CardTitle>
-              <CardDescription>填写基本信息，提交后等待管理员审批</CardDescription>
+              <CardDescription>填写基本信息，提交后需要验证邮箱</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleRegister} className="space-y-4">
@@ -217,12 +212,37 @@ export default function Register() {
           </Card>
         )}
 
-        <p className="text-center text-sm text-muted-foreground">
-          已有账号？{' '}
-          <Link to="/login" className="text-accent underline-offset-4 hover:underline">
-            去登录
-          </Link>
-        </p>
+        {step === 'check_email' && (
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+                <MailCheck className="h-6 w-6" />
+              </div>
+              <CardTitle>查收确认邮件</CardTitle>
+              <CardDescription>
+                我们向 <strong>{email}</strong> 发送了一封确认邮件，请点击邮件中的链接完成验证。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg bg-muted p-4 text-sm text-muted-foreground space-y-1">
+                <p>验证邮箱后，你的账号将进入审批流程。</p>
+                <p>管理员通过后即可使用共研。</p>
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                没收到？请检查垃圾邮件文件夹
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {step !== 'check_email' && (
+          <p className="text-center text-sm text-muted-foreground">
+            已有账号？{' '}
+            <Link to="/login" className="text-accent underline-offset-4 hover:underline">
+              去登录
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )

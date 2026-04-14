@@ -4,18 +4,23 @@ import type { HelpPost, PostCategory, PostStatus } from '@/types/database'
 interface FetchPostsOptions {
   category?: PostCategory
   status?: PostStatus
+  author_id?: string
   limit?: number
   offset?: number
 }
 
 export async function fetchPosts(options: FetchPostsOptions = {}) {
-  const { category, status, limit = 20, offset = 0 } = options
+  const { category, status, author_id, limit = 20, offset = 0 } = options
 
   let query = supabase
     .from('help_posts')
     .select('*, author:profiles!author_id(id, full_name, avatar_url, badge_level, institution)')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
+
+  if (author_id) {
+    query = query.eq('author_id', author_id)
+  }
 
   if (category) {
     query = query.eq('category', category)

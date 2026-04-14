@@ -7,11 +7,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
+import { ShowcaseEditSection } from '@/components/showcase/ShowcaseEditSection'
+import { GitHubIcon } from '@/components/shared/GitHubIcon'
+
 
 export default function ProfileEdit() {
-  const { profile, refreshProfile } = useAuthStore()
+  const { profile, refreshProfile, linkGitHub, unlinkGitHub } = useAuthStore()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [fullName, setFullName] = useState(profile?.full_name ?? '')
@@ -39,8 +44,8 @@ export default function ProfileEdit() {
 
     await refreshProfile()
     toast.success('个人资料已更新')
-    navigate(`/user/${profile.id}`)
     setLoading(false)
+    navigate(`/user/${profile.id}`)
   }
 
   return (
@@ -111,6 +116,56 @@ export default function ProfileEdit() {
           </form>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>GitHub 账号</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {profile?.github_username ? (
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary" className="gap-1.5 py-1">
+                <GitHubIcon className="h-3.5 w-3.5" />
+                @{profile.github_username}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={async () => {
+                  const { error } = await unlinkGitHub()
+                  if (error) {
+                    toast.error('解绑失败', { description: error })
+                  } else {
+                    toast.success('GitHub 已解绑')
+                  }
+                }}
+              >
+                解绑
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={async () => {
+                const { error } = await linkGitHub()
+                if (error) toast.error('绑定失败', { description: error })
+              }}
+            >
+              <GitHubIcon className="h-4 w-4" />
+              绑定 GitHub
+            </Button>
+          )}
+          <Separator />
+          <p className="text-xs text-muted-foreground">
+            绑定后可在互助广场一键 Star GitHub 项目
+          </p>
+        </CardContent>
+      </Card>
+
+      {profile && <ShowcaseEditSection userId={profile.id} />}
     </div>
   )
 }

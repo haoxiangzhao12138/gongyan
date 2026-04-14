@@ -5,6 +5,7 @@ import {
   MessageSquareText,
   User,
   Bell,
+  Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNotificationStore } from '@/store/notificationStore'
@@ -28,6 +29,10 @@ export function BottomNav() {
       <NavLink to="/board" className={navClass}>
         <MessageSquareText className="h-5 w-5" />
         看板
+      </NavLink>
+      <NavLink to="/star-board" className={navClass}>
+        <Star className="h-5 w-5" />
+        广场
       </NavLink>
       <NavLink to="/notifications" className={navClass}>
         <div className="relative">
