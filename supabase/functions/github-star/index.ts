@@ -13,6 +13,47 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   })
 }
 
+/** Try refreshing an expired GitHub token. Returns new token or null. */
+async function refreshGitHubToken(
+  refreshToken: string,
+  clientId: string,
+  clientSecret: string
+): Promise<{ access_token: string; refresh_token?: string } | null> {
+  try {
+    const response = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    if (data.error || !data.access_token) return null
+    return { access_token: data.access_token, refresh_token: data.refresh_token }
+  } catch {
+    return null
+  }
+}
+
+/** Star a GitHub repo using the given token */
+async function starRepo(token: string, owner: string, repo: string) {
+  return fetch(`https://api.github.com/user/starred/${owner}/${repo}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -56,7 +97,7 @@ Deno.serve(async (req) => {
     // Read GitHub token from credentials table
     const { data: creds, error: credsError } = await supabase
       .from('github_credentials')
-      .select('github_token')
+      .select('github_token, github_refresh_token')
       .eq('user_id', user.id)
       .single()
 
@@ -65,24 +106,48 @@ Deno.serve(async (req) => {
     }
 
     // Call GitHub API to star the repo
-    const ghResponse = await fetch(
-      `https://api.github.com/user/starred/${owner}/${repo}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${creds.github_token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      }
-    )
+    let ghResponse = await starRepo(creds.github_token, owner, repo)
 
     if (ghResponse.status === 204 || ghResponse.status === 304) {
       return jsonResponse({ success: true })
     }
 
+    // On 401, try refreshing the token before giving up
+    if (ghResponse.status === 401 && creds.github_refresh_token) {
+      const ghClientId = Deno.env.get('GITHUB_CLIENT_ID')
+      const ghClientSecret = Deno.env.get('GITHUB_CLIENT_SECRET')
+
+      if (ghClientId && ghClientSecret) {
+        const refreshed = await refreshGitHubToken(
+          creds.github_refresh_token,
+          ghClientId,
+          ghClientSecret
+        )
+
+        if (refreshed) {
+          // Save the new token
+          await supabase
+            .from('github_credentials')
+            .update({
+              github_token: refreshed.access_token,
+              ...(refreshed.refresh_token
+                ? { github_refresh_token: refreshed.refresh_token }
+                : {}),
+            })
+            .eq('user_id', user.id)
+
+          // Retry the star operation
+          ghResponse = await starRepo(refreshed.access_token, owner, repo)
+
+          if (ghResponse.status === 204 || ghResponse.status === 304) {
+            return jsonResponse({ success: true })
+          }
+        }
+      }
+    }
+
     if (ghResponse.status === 401) {
-      // Token expired or revoked
+      // Token expired and refresh failed — clear credentials
       await supabase
         .from('github_credentials')
         .delete()
@@ -101,7 +166,6 @@ Deno.serve(async (req) => {
 
     if (ghResponse.status === 403) {
       const errorText = await ghResponse.text()
-      // If scope is insufficient, clear credentials so user re-binds with correct scopes
       await supabase
         .from('github_credentials')
         .delete()
@@ -124,7 +188,6 @@ Deno.serve(async (req) => {
     }
 
     if (ghResponse.status === 404) {
-      // GitHub returns 404 for repos that don't exist or when token lacks scopes
       return jsonResponse(
         { success: false, error: '仓库不存在或无权访问，请检查 GitHub 授权范围', code: 'REPO_NOT_FOUND' },
         200
@@ -136,7 +199,7 @@ Deno.serve(async (req) => {
       { success: false, error: `GitHub API 错误: ${ghResponse.status}`, detail: errorBody },
       200
     )
-  } catch (err) {
+  } catch (_err) {
     return jsonResponse({ error: '服务器内部错误' }, 500)
   }
 })

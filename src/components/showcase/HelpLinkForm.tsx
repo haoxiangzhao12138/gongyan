@@ -17,30 +17,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { parseGitHubOwnerRepo } from '@/lib/api/github'
+import { PLATFORM_OPTIONS, ACTION_PRESETS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { HelpLinkPlatform, ShowcaseHelpLink } from '@/types/database'
-
-const PLATFORM_OPTIONS: { value: HelpLinkPlatform; label: string }[] = [
-  { value: 'github', label: 'GitHub' },
-  { value: 'huggingface', label: 'HuggingFace' },
-  { value: 'zhihu', label: '知乎' },
-  { value: 'xiaohongshu', label: '小红书' },
-  { value: 'wechat', label: '微信' },
-  { value: 'bilibili', label: 'B站' },
-  { value: 'twitter', label: 'Twitter/X' },
-  { value: 'other', label: '其他' },
-]
-
-const ACTION_PRESETS: Record<HelpLinkPlatform, string> = {
-  github: '点 Star',
-  huggingface: '点赞',
-  zhihu: '点赞',
-  xiaohongshu: '点赞',
-  wechat: '点赞',
-  bilibili: '三连',
-  twitter: '转推',
-  other: '点赞',
-}
 
 interface HelpLinkFormProps {
   open: boolean

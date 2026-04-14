@@ -13,6 +13,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { GitHubIcon } from '@/components/shared/GitHubIcon'
 import { RefreshCw, ExternalLink, Star, Loader2, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -36,6 +43,8 @@ export default function StarBoard() {
   const [refreshing, setRefreshing] = useState(false)
   const [starringAll, setStarringAll] = useState(false)
   const [starAllProgress, setStarAllProgress] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingStarLinks, setPendingStarLinks] = useState<ShowcaseHelpLink[]>([])
 
   const hasGitHub = !!profile?.github_username
 
@@ -114,11 +123,10 @@ export default function StarBoard() {
     setRefreshing(false)
   }
 
-  async function handleStarAll(targetLinks?: ShowcaseHelpLink[]) {
+  /** Opens confirmation dialog before batch starring */
+  function requestStarAll(targetLinks?: ShowcaseHelpLink[]) {
     if (!profile || !hasGitHub) return
-    setStarringAll(true)
 
-    // Find all GitHub links from other users that are not yet completed
     const unstarredGithubLinks = (targetLinks ?? links).filter(
       (l) =>
         l.platform === 'github' &&
@@ -129,11 +137,25 @@ export default function StarBoard() {
 
     if (unstarredGithubLinks.length === 0) {
       toast.info('所有 GitHub 项目都已 Star')
+      return
+    }
+
+    setPendingStarLinks(unstarredGithubLinks)
+    setConfirmOpen(true)
+  }
+
+  /** Execute batch star after confirmation */
+  async function handleStarAll(confirmedLinks: ShowcaseHelpLink[]) {
+    if (!profile || !hasGitHub) return
+    setStarringAll(true)
+
+    if (confirmedLinks.length === 0) {
+      toast.info('所有 GitHub 项目都已 Star')
       setStarringAll(false)
       return
     }
 
-    const urls = unstarredGithubLinks.map((l) => l.url)
+    const urls = confirmedLinks.map((l) => l.url)
     setStarAllProgress(`0/${urls.length}`)
 
     const results = await starGitHubRepos(urls, (done, total) => {
@@ -146,7 +168,7 @@ export default function StarBoard() {
     let successCount = 0
 
     await Promise.all(
-      unstarredGithubLinks.map(async (link) => {
+      confirmedLinks.map(async (link) => {
         if (results[link.url]) {
           newStarredUrls.add(link.url)
           const { error } = await completeHelpLink(link.id, profile.id)
@@ -405,7 +427,7 @@ export default function StarBoard() {
               variant="default"
               size="sm"
               className="gap-1.5"
-              onClick={() => handleStarAll()}
+              onClick={() => requestStarAll()}
               disabled={starringAll}
             >
               {starringAll ? (
@@ -506,6 +528,46 @@ export default function StarBoard() {
           <div className="space-y-3 pt-2">{renderGroups(myLinks, false)}</div>
         </TabsContent>
       </Tabs>
+
+      {/* Batch Star confirmation dialog */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-md max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>确认批量 Star</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            即将为以下 {pendingStarLinks.length} 个 GitHub 项目点 Star：
+          </p>
+          <ul className="space-y-1.5 my-2">
+            {pendingStarLinks.map((link) => {
+              const parsed = parseGitHubOwnerRepo(link.url)
+              return (
+                <li key={link.id} className="flex items-center gap-2 text-sm">
+                  <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">
+                    {parsed ? `${parsed.owner}/${parsed.repo}` : link.url}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmOpen(false)
+                handleStarAll(pendingStarLinks)
+              }}
+              className="gap-1.5"
+            >
+              <Star className="h-3.5 w-3.5" />
+              确认 Star {pendingStarLinks.length} 个项目
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

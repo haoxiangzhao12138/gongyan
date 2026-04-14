@@ -10,6 +10,36 @@ export function parseGitHubOwnerRepo(
   return { owner, repo }
 }
 
+/** Fetch public repo info from GitHub API (no auth needed) */
+export async function fetchGitHubRepoInfo(url: string): Promise<{
+  name: string
+  description: string | null
+  stargazers_count: number
+  html_url: string
+} | null> {
+  const parsed = parseGitHubOwnerRepo(url)
+  if (!parsed) return null
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
+      {
+        headers: { Accept: 'application/vnd.github+json' },
+      }
+    )
+    if (!response.ok) return null
+    const data = await response.json()
+    return {
+      name: data.full_name ?? `${parsed.owner}/${parsed.repo}`,
+      description: data.description ?? null,
+      stargazers_count: data.stargazers_count ?? 0,
+      html_url: data.html_url ?? url,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function starGitHubRepo(url: string): Promise<{
   success: boolean
   error: string | null

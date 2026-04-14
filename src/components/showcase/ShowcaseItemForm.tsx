@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +19,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { parseGitHubOwnerRepo } from '@/lib/api/github'
+import { parseGitHubOwnerRepo, fetchGitHubRepoInfo } from '@/lib/api/github'
+import { fetchPaperByDOI, looksLikeDOI } from '@/lib/api/crossref'
+import { PLATFORM_OPTIONS, ACTION_PRESETS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { ShowcaseItem, ShowcaseItemType, HelpLinkPlatform } from '@/types/database'
 
@@ -27,28 +29,6 @@ const TYPE_LABELS: Record<ShowcaseItemType, string> = {
   paper: '论文',
   github: 'GitHub 项目',
   link: '链接',
-}
-
-const PLATFORM_OPTIONS: { value: HelpLinkPlatform; label: string }[] = [
-  { value: 'github', label: 'GitHub' },
-  { value: 'huggingface', label: 'HuggingFace' },
-  { value: 'zhihu', label: '知乎' },
-  { value: 'xiaohongshu', label: '小红书' },
-  { value: 'wechat', label: '微信' },
-  { value: 'bilibili', label: 'B站' },
-  { value: 'twitter', label: 'Twitter/X' },
-  { value: 'other', label: '其他' },
-]
-
-const ACTION_PRESETS: Record<HelpLinkPlatform, string> = {
-  github: '点 Star',
-  huggingface: '点赞',
-  zhihu: '点赞',
-  xiaohongshu: '点赞',
-  wechat: '点赞',
-  bilibili: '三连',
-  twitter: '转推',
-  other: '点赞',
 }
 
 interface HelpLinkDraft {
@@ -98,9 +78,63 @@ export function ShowcaseItemForm({
     initial?.platform_label ?? ''
   )
   const [saving, setSaving] = useState(false)
+  const [fetchingRepo, setFetchingRepo] = useState(false)
+  const [fetchingDOI, setFetchingDOI] = useState(false)
 
   // Inline help link drafts (only for new items)
   const [helpLinkDrafts, setHelpLinkDrafts] = useState<HelpLinkDraft[]>([])
+
+  // Auto-fetch GitHub repo info when URL changes
+  const handleUrlBlur = useCallback(async () => {
+    if (itemType !== 'github' || isEdit) return
+    const parsed = parseGitHubOwnerRepo(url)
+    if (!parsed) return
+    // Only auto-fill if title is empty (user hasn't typed anything)
+    if (title) return
+
+    setFetchingRepo(true)
+    const info = await fetchGitHubRepoInfo(url)
+    setFetchingRepo(false)
+
+    if (info) {
+      setTitle(info.name)
+      if (!description && info.description) setDescription(info.description)
+      if (!starsCount) setStarsCount(info.stargazers_count.toString())
+
+      // Auto-add a "Star this repo" help link draft if none exist
+      if (helpLinkDrafts.length === 0) {
+        setHelpLinkDrafts([
+          {
+            platform: 'github',
+            url: info.html_url,
+            title: `Star ${info.name}`,
+            action_label: '点 Star',
+          },
+        ])
+      }
+    }
+  }, [url, itemType, isEdit, title, description, starsCount, helpLinkDrafts.length])
+
+  // Auto-fetch paper info from Crossref when DOI URL is entered
+  const handlePaperUrlBlur = useCallback(async () => {
+    if (itemType !== 'paper' || isEdit) return
+    if (!looksLikeDOI(url)) return
+    if (title) return // user already filled title
+
+    setFetchingDOI(true)
+    const paper = await fetchPaperByDOI(url)
+    setFetchingDOI(false)
+
+    if (paper) {
+      setTitle(paper.title)
+      if (!description && paper.authors) {
+        const yearStr = paper.year ? ` (${paper.year})` : ''
+        const venueStr = paper.venue ? `. ${paper.venue}` : ''
+        setDescription(`${paper.authors}${yearStr}${venueStr}`)
+      }
+      toast.success('已自动获取论文信息')
+    }
+  }, [url, itemType, isEdit, title, description])
 
   // Reset form state when dialog opens or initial data changes
   useEffect(() => {
@@ -235,14 +269,32 @@ export function ShowcaseItemForm({
 
           <div className="space-y-2">
             <Label htmlFor="showcase-url">链接</Label>
-            <Input
-              id="showcase-url"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://..."
-              required
-            />
+            <div className="relative">
+              <Input
+                id="showcase-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onBlur={itemType === 'github' ? handleUrlBlur : itemType === 'paper' ? handlePaperUrlBlur : undefined}
+                placeholder={
+                  itemType === 'github'
+                    ? 'https://github.com/owner/repo'
+                    : itemType === 'paper'
+                      ? 'https://doi.org/10.xxxx/... 或论文链接'
+                      : 'https://...'
+                }
+                required
+              />
+              {(fetchingRepo || fetchingDOI) && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            {itemType === 'github' && !isEdit && (
+              <p className="text-xs text-muted-foreground">粘贴 GitHub 链接后会自动获取项目信息</p>
+            )}
+            {itemType === 'paper' && !isEdit && (
+              <p className="text-xs text-muted-foreground">粘贴 DOI 链接可自动获取论文标题和作者</p>
+            )}
           </div>
 
           <div className="space-y-2">

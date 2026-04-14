@@ -6,19 +6,9 @@ import { completeHelpLink, uncompleteHelpLink } from '@/lib/api/helpLinks'
 import { starGitHubRepo } from '@/lib/api/github'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
+import { PLATFORM_LABELS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { ShowcaseHelpLink } from '@/types/database'
-
-const PLATFORM_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  huggingface: 'HuggingFace',
-  zhihu: '知乎',
-  xiaohongshu: '小红书',
-  wechat: '微信',
-  bilibili: 'B站',
-  twitter: 'Twitter/X',
-  other: '其他',
-}
 
 interface HelpLinkRowProps {
   link: ShowcaseHelpLink
