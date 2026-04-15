@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database'
 import { supabase } from '@/lib/supabase'
+import { validateHfToken } from '@/lib/api/huggingface'
 
 interface AuthState {
   session: Session | null
@@ -19,6 +20,9 @@ interface AuthState {
   refreshProfile: () => Promise<void>
   linkGitHub: () => Promise<{ error: string | null }>
   unlinkGitHub: () => Promise<{ error: string | null }>
+  linkHuggingFace: (token: string) => Promise<{ error: string | null; username?: string }>
+  unlinkHuggingFace: () => Promise<{ error: string | null }>
+  getHfToken: () => Promise<string | null>
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -58,7 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             (githubIdentity?.identity_data?.user_name as string) ?? null
 
           // Save token to separate credentials table (not readable by other users)
-          await supabase
+          const { error: credErr } = await supabase
             .from('github_credentials')
             .upsert({
               user_id: session.user.id,
@@ -68,11 +72,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 : {}),
             })
 
+          if (credErr) {
+            console.error('Failed to save GitHub credentials:', credErr.message)
+          }
+
           // Save public username to profiles
-          await supabase
+          const { error: profileErr } = await supabase
             .from('profiles')
             .update({ github_username: githubUsername })
             .eq('id', session.user.id)
+
+          if (profileErr) {
+            console.error('Failed to update GitHub username:', profileErr.message)
+          }
         }
 
         const { data } = await supabase
@@ -176,5 +188,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await get().refreshProfile()
     return { error: null }
+  },
+
+  linkHuggingFace: async (token: string) => {
+    // Validate the token first
+    const { valid, username, error: validateError } = await validateHfToken(token)
+    if (!valid) return { error: validateError ?? 'HuggingFace Token 无效，请检查后重试' }
+
+    const session = get().session
+    if (!session?.user) return { error: '请先登录' }
+
+    // Store HF token in github_credentials table (reusing secure table).
+    // Use upsert with onConflict to handle both cases (row exists from GitHub binding or not).
+    // Note: github_credentials has no SELECT policy, so we can't check existence first.
+    // Only set huggingface_token — upsert won't overwrite github_token/github_refresh_token.
+    const { error } = await supabase
+      .from('github_credentials')
+      .upsert(
+        { user_id: session.user.id, huggingface_token: token },
+        { onConflict: 'user_id', ignoreDuplicates: false },
+      )
+
+    if (error) return { error: error.message }
+    return { error: null, username }
+  },
+
+  unlinkHuggingFace: async () => {
+    const session = get().session
+    if (!session?.user) return { error: '请先登录' }
+
+    const { error } = await supabase
+      .from('github_credentials')
+      .update({ huggingface_token: null })
+      .eq('user_id', session.user.id)
+
+    if (error) return { error: error.message }
+    return { error: null }
+  },
+
+  getHfToken: async () => {
+    const session = get().session
+    if (!session?.user) return null
+
+    const { data } = await supabase
+      .from('github_credentials')
+      .select('huggingface_token')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+
+    return (data as { huggingface_token: string | null } | null)?.huggingface_token ?? null
   },
 }))

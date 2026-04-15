@@ -24,6 +24,7 @@ export const ALL_CATEGORIES: PostCategory[] = [
 export const PLATFORM_LABELS: Record<HelpLinkPlatform, string> = {
   github: 'GitHub',
   huggingface: 'HuggingFace',
+  alphaxiv: 'AlphaXiv',
   zhihu: '知乎',
   xiaohongshu: '小红书',
   wechat: '微信',
@@ -36,6 +37,7 @@ export const PLATFORM_LABELS: Record<HelpLinkPlatform, string> = {
 export const PLATFORM_OPTIONS: { value: HelpLinkPlatform; label: string }[] = [
   { value: 'github', label: 'GitHub' },
   { value: 'huggingface', label: 'HuggingFace' },
+  { value: 'alphaxiv', label: 'AlphaXiv' },
   { value: 'zhihu', label: '知乎' },
   { value: 'xiaohongshu', label: '小红书' },
   { value: 'wechat', label: '微信' },
@@ -47,7 +49,8 @@ export const PLATFORM_OPTIONS: { value: HelpLinkPlatform; label: string }[] = [
 /** Default action labels per platform */
 export const ACTION_PRESETS: Record<HelpLinkPlatform, string> = {
   github: '点 Star',
-  huggingface: '点赞',
+  huggingface: '点 Upvote',
+  alphaxiv: '点赞',
   zhihu: '点赞',
   xiaohongshu: '点赞',
   wechat: '点赞',

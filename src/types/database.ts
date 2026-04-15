@@ -37,6 +37,7 @@ export interface Profile {
   help_given_count: number
   help_received_count: number
   github_username: string | null
+  google_scholar_url: string | null
   invited_by: string | null
   created_at: string
   updated_at: string
@@ -112,10 +113,26 @@ export interface ShowcaseItem {
   citation: string | null
   stars_count: number | null
   platform_label: string | null
+  doi: string | null
+  year: number | null
+  venue: string | null
+  citation_count: number | null
+  openalex_id: string | null
+  arxiv_id: string | null
   like_count: number
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+export interface PaperRepoLink {
+  id: string
+  paper_item_id: string
+  github_url: string
+  repo_name: string | null
+  stars_count: number
+  source: 'huggingface' | 'manual'
+  created_at: string
 }
 
 export interface ShowcaseLike {
@@ -128,6 +145,7 @@ export interface ShowcaseLike {
 export type HelpLinkPlatform =
   | 'github'
   | 'huggingface'
+  | 'alphaxiv'
   | 'zhihu'
   | 'xiaohongshu'
   | 'wechat'

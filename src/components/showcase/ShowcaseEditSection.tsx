@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, Link2, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2, Link2, ExternalLink, BookOpen, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ShowcaseItemForm, type ShowcaseItemFormValues } from './ShowcaseItemForm'
 import { HelpLinkForm } from './HelpLinkForm'
+import { PaperImportDialog } from './PaperImportDialog'
 import { parseGitHubOwnerRepo } from '@/lib/api/github'
 import { GitHubIcon } from '@/components/shared/GitHubIcon'
 import {
@@ -19,6 +20,11 @@ import {
   updateHelpLink,
   deleteHelpLink,
 } from '@/lib/api/helpLinks'
+import { fetchRepoLinksByPapers } from '@/lib/api/paperRepoLinks'
+import { enrichPaperIds } from '@/lib/api/semanticScholar'
+import { fetchHfPaperByArxiv } from '@/lib/api/huggingface'
+import { batchCreateRepoLinks } from '@/lib/api/paperRepoLinks'
+import { updateShowcaseItemArxiv } from '@/lib/api/showcase'
 import { useAuthStore } from '@/store/authStore'
 import { PLATFORM_LABELS } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -27,6 +33,7 @@ import type {
   ShowcaseItemType,
   ShowcaseHelpLink,
   HelpLinkPlatform,
+  PaperRepoLink,
 } from '@/types/database'
 
 interface ShowcaseEditSectionProps {
@@ -51,6 +58,10 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingLinkId, setDeletingLinkId] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [existingDois, setExistingDois] = useState<Set<string>>(new Set())
+  const [repoLinksMap, setRepoLinksMap] = useState<Map<string, PaperRepoLink[]>>(new Map())
+  const [enrichingId, setEnrichingId] = useState<string | null>(null)
 
   useEffect(() => {
     loadItems()
@@ -88,6 +99,14 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
     const { data } = await fetchShowcaseItems(userId)
     setItems(data)
 
+    // Build existing DOIs set from loaded items
+    const dois = new Set(
+      data
+        .filter((item) => item.doi !== null)
+        .map((item) => item.doi as string)
+    )
+    setExistingDois(dois)
+
     // Load help links for paper and github items
     const linkable = data.filter((item) => item.item_type === 'paper' || item.item_type === 'github')
     const newMap = new Map<string, ShowcaseHelpLink[]>()
@@ -100,6 +119,12 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
       })
     )
     setHelpLinksMap(newMap)
+    // Load repo links for paper items
+    const paperIds = data.filter((item) => item.item_type === 'paper').map((item) => item.id)
+    if (paperIds.length > 0) {
+      const { data: repoMap } = await fetchRepoLinksByPapers(paperIds)
+      setRepoLinksMap(repoMap)
+    }
     setLoading(false)
   }
 
@@ -319,9 +344,90 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
   const githubItems = items.filter((i) => i.item_type === 'github')
   const linkItems = items.filter((i) => i.item_type === 'link')
 
+  /** Manually trigger enrichment for a single paper to find GitHub repos */
+  async function handleFindRepos(item: ShowcaseItem) {
+    if (!item.doi) {
+      toast.error('该论文没有 DOI，无法查找关联代码')
+      return
+    }
+
+    setEnrichingId(item.id)
+    const enriched = await enrichPaperIds(item.doi)
+    if (!enriched?.arxivId) {
+      toast.info('未找到该论文的 arXiv 信息')
+      setEnrichingId(null)
+      return
+    }
+
+    const { error: arxivErr } = await updateShowcaseItemArxiv(item.id, enriched.arxivId)
+    if (arxivErr) {
+      toast.error('保存 arXiv 信息失败')
+      setEnrichingId(null)
+      return
+    }
+
+    const hfPaper = await fetchHfPaperByArxiv(enriched.arxivId)
+    if (hfPaper?.github_repo) {
+      const repoUrl = hfPaper.github_repo.startsWith('http')
+        ? hfPaper.github_repo
+        : `https://github.com/${hfPaper.github_repo}`
+      const repoName = hfPaper.github_repo.replace('https://github.com/', '')
+
+      const { data: created, error: repoErr } = await batchCreateRepoLinks([{
+        paper_item_id: item.id,
+        github_url: repoUrl,
+        repo_name: repoName,
+        stars_count: hfPaper.github_stars ?? 0,
+        source: 'huggingface',
+      }])
+
+      if (repoErr) {
+        toast.error('保存关联项目失败')
+      } else if (created.length > 0) {
+        setRepoLinksMap((prev) => {
+          const next = new Map(prev)
+          const existing = next.get(item.id) ?? []
+          next.set(item.id, [...existing, ...created])
+          return next
+        })
+        toast.success(`发现关联 GitHub 项目: ${repoName}`)
+      }
+    } else {
+      toast.info('未找到关联的 GitHub 项目')
+    }
+    setEnrichingId(null)
+  }
+
+  /** Create a GitHub showcase item from a discovered repo link */
+  async function handleAddRepoAsShowcase(link: PaperRepoLink) {
+    if (isGitHubUrlDuplicate(link.github_url)) {
+      toast.error('该 GitHub 链接已存在')
+      return
+    }
+
+    const { data, error } = await createShowcaseItem({
+      user_id: userId,
+      item_type: 'github',
+      title: link.repo_name ?? link.github_url,
+      url: link.github_url,
+      stars_count: link.stars_count,
+      sort_order: items.length,
+    })
+
+    if (error) {
+      toast.error('添加失败', { description: error })
+      return
+    }
+    if (data) {
+      setItems((prev) => [...prev, data])
+      toast.success('已添加为 GitHub 项目')
+    }
+  }
+
   function renderItemRow(item: ShowcaseItem) {
     const links = helpLinksMap.get(item.id) ?? []
     const hasHelpLinks = item.item_type === 'paper' || item.item_type === 'github'
+    const repoLinks = repoLinksMap.get(item.id) ?? []
 
     return (
       <li key={item.id} className="py-2.5">
@@ -341,6 +447,17 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {item.item_type === 'paper' && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => handleFindRepos(item)}
+                disabled={enrichingId === item.id}
+                title="查找关联代码"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            )}
             {hasHelpLinks && (
               <Button
                 variant="ghost"
@@ -369,6 +486,35 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
             </Button>
           </div>
         </div>
+
+        {/* Discovered GitHub repos */}
+        {repoLinks.length > 0 && (
+          <div className="mt-1.5 ml-4 flex flex-wrap gap-1.5">
+            {repoLinks.map((repo) => (
+              <div key={repo.id} className="flex items-center gap-1">
+                <a
+                  href={repo.github_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/50"
+                >
+                  <GitHubIcon className="h-3 w-3" />
+                  {repo.repo_name ?? 'repo'}
+                  {repo.stars_count > 0 && <span>★{repo.stars_count}</span>}
+                </a>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-5 w-5 text-xs"
+                  title="一键添加为 GitHub 项目"
+                  onClick={() => handleAddRepoAsShowcase(repo)}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Help links sub-list */}
         {hasHelpLinks && links.length > 0 && (
@@ -428,10 +574,16 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">论文</CardTitle>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleAdd('paper')}>
-              <Plus className="h-3.5 w-3.5" />
-              添加论文
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setImportOpen(true)}>
+                <BookOpen className="h-3.5 w-3.5" />
+                导入论文
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleAdd('paper')}>
+                <Plus className="h-3.5 w-3.5" />
+                添加论文
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -505,6 +657,24 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
         onOpenChange={setHelpFormOpen}
         initial={editingHelpLink}
         onSubmit={handleHelpLinkSubmit}
+      />
+
+      <PaperImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        userId={userId}
+        authorName={profile?.full_name ?? ''}
+        existingDois={existingDois}
+        onImported={(newItems) => {
+          setItems((prev) => [...prev, ...newItems])
+          setExistingDois((prev) => {
+            const next = new Set(prev)
+            for (const item of newItems) {
+              if (item.doi) next.add(item.doi)
+            }
+            return next
+          })
+        }}
       />
     </>
   )

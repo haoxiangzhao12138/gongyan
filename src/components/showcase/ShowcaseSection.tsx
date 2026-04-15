@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchShowcaseItems, fetchUserLikes, createShowcaseItem } from '@/lib/api/showcase'
 import { fetchHelpLinksByItem, fetchUserCompletions } from '@/lib/api/helpLinks'
+import { fetchRepoLinksByPapers } from '@/lib/api/paperRepoLinks'
 import { ShowcasePaperCard } from './ShowcasePaperCard'
 import { ShowcaseGitHubCard } from './ShowcaseGitHubCard'
 import { ShowcaseLinkCard } from './ShowcaseLinkCard'
 import { ShowcaseItemForm } from './ShowcaseItemForm'
 import { toast } from 'sonner'
-import type { ShowcaseItem, ShowcaseItemType, ShowcaseHelpLink } from '@/types/database'
+import type { ShowcaseItem, ShowcaseItemType, ShowcaseHelpLink, PaperRepoLink } from '@/types/database'
 
 interface ShowcaseSectionProps {
   userId: string
@@ -28,6 +29,7 @@ export function ShowcaseSection({ userId, currentUserId }: ShowcaseSectionProps)
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
   const [helpLinksMap, setHelpLinksMap] = useState<Map<string, ShowcaseHelpLink[]>>(new Map())
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
+  const [repoLinksMap, setRepoLinksMap] = useState<Map<string, PaperRepoLink[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [addFormOpen, setAddFormOpen] = useState(false)
 
@@ -61,6 +63,13 @@ export function ShowcaseSection({ userId, currentUserId }: ShowcaseSectionProps)
         })
       )
       setHelpLinksMap(linksMap)
+
+      // Load repo links for paper items
+      const paperIds = data.filter((i) => i.item_type === 'paper').map((i) => i.id)
+      if (paperIds.length > 0) {
+        const { data: repoMap } = await fetchRepoLinksByPapers(paperIds)
+        setRepoLinksMap(repoMap)
+      }
 
       if (currentUserId && allLinkIds.length > 0) {
         const { data: completed } = await fetchUserCompletions(currentUserId, allLinkIds)
@@ -183,6 +192,7 @@ export function ShowcaseSection({ userId, currentUserId }: ShowcaseSectionProps)
                           liked={liked}
                           helpLinks={helpLinksMap.get(item.id) ?? []}
                           completedIds={completedIds}
+                          repoLinks={repoLinksMap.get(item.id) ?? []}
                           onItemUpdated={handleItemUpdated}
                           onHelpLinksChanged={handleHelpLinksChanged}
                         />

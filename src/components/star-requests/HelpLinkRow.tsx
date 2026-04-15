@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, CheckCircle2, Circle, Star, Loader2 } from 'lucide-react'
+import { ExternalLink, CheckCircle2, Circle, Star, Loader2, ThumbsUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { completeHelpLink, uncompleteHelpLink } from '@/lib/api/helpLinks'
@@ -22,7 +22,6 @@ interface HelpLinkRowProps {
 export function HelpLinkRow({
   link,
   currentUserId,
-  ownerId,
   initialCompleted,
   githubStarred = false,
   compact = false,
@@ -36,9 +35,9 @@ export function HelpLinkRow({
   const profile = useAuthStore((s) => s.profile)
   const hasGitHub = !!profile?.github_username
 
-  const isOwn = currentUserId === ownerId
   const isGitHub = link.platform === 'github'
-  const disabled = !currentUserId || isOwn || pending
+  const isHuggingFace = link.platform === 'huggingface'
+  const disabled = !currentUserId || pending
 
   async function handleToggle() {
     if (disabled) return
@@ -69,7 +68,6 @@ export function HelpLinkRow({
         toast.error('GitHub 绑定失败', { description: error })
         setStarring(false)
       }
-      // Page will redirect to GitHub OAuth
       return
     }
 
@@ -91,7 +89,6 @@ export function HelpLinkRow({
     setStarred(true)
     toast.success('Star 成功！')
 
-    // Auto-complete the help link if not already completed
     if (!completed) {
       setCompleted(true)
       setCount((c) => c + 1)
@@ -105,6 +102,27 @@ export function HelpLinkRow({
     }
 
     setStarring(false)
+  }
+
+  /** Open HF paper page and auto-mark as completed */
+  async function handleHfUpvote() {
+    if (!currentUserId) return
+
+    // Open the HuggingFace paper page in a new tab for manual upvote
+    window.open(link.url, '_blank', 'noopener,noreferrer')
+
+    // Auto-mark as completed since user is being directed to the page
+    if (!completed) {
+      setCompleted(true)
+      setCount((c) => c + 1)
+      setPending(true)
+      const { error } = await completeHelpLink(link.id, currentUserId)
+      if (error) {
+        setCompleted(false)
+        setCount((c) => c - 1)
+      }
+      setPending(false)
+    }
   }
 
   return (
@@ -138,7 +156,7 @@ export function HelpLinkRow({
         {link.action_label}
       </Badge>
 
-      {isGitHub && !isOwn && currentUserId && (
+      {isGitHub && currentUserId && (
         <Button
           variant={starred || completed ? 'ghost' : 'secondary'}
           size="sm"
@@ -152,6 +170,19 @@ export function HelpLinkRow({
             <Star className={cn('h-3 w-3', (starred || completed) && 'fill-amber-400 text-amber-400')} />
           )}
           {!hasGitHub ? '绑定 GitHub' : starred || completed ? '已 Star' : '一键 Star'}
+        </Button>
+      )}
+
+      {isHuggingFace && currentUserId && (
+        <Button
+          variant={completed ? 'ghost' : 'secondary'}
+          size="sm"
+          className="ml-1 gap-1 text-xs h-6 px-2"
+          onClick={handleHfUpvote}
+          disabled={pending || completed}
+        >
+          <ThumbsUp className={cn('h-3 w-3', completed && 'fill-blue-400 text-blue-400')} />
+          {completed ? '已 Upvote' : '去 Upvote'}
         </Button>
       )}
 

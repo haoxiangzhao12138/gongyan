@@ -22,6 +22,12 @@ export async function createShowcaseItem(item: {
   stars_count?: number
   platform_label?: string
   sort_order?: number
+  doi?: string
+  year?: number
+  venue?: string
+  citation_count?: number
+  openalex_id?: string
+  arxiv_id?: string
 }) {
   const { data, error } = await supabase
     .from('showcase_items')
@@ -96,4 +102,55 @@ export async function fetchUserLikes(userId: string, itemIds: string[]) {
 
   const likedIds = new Set((data ?? []).map((row: { item_id: string }) => row.item_id))
   return { data: likedIds, error: error?.message ?? null }
+}
+
+export async function batchCreateShowcaseItems(
+  items: Array<{
+    user_id: string
+    item_type: ShowcaseItemType
+    title: string
+    url: string
+    description?: string
+    doi?: string
+    year?: number
+    venue?: string
+    citation_count?: number
+    openalex_id?: string
+    arxiv_id?: string
+    sort_order?: number
+  }>
+) {
+  if (items.length === 0) return { data: [] as ShowcaseItem[], error: null }
+
+  const { data, error } = await supabase
+    .from('showcase_items')
+    .insert(items)
+    .select()
+
+  return { data: (data as ShowcaseItem[]) ?? [], error: error?.message ?? null }
+}
+
+export async function fetchUserPaperDois(userId: string): Promise<Set<string>> {
+  const { data } = await supabase
+    .from('showcase_items')
+    .select('doi')
+    .eq('user_id', userId)
+    .eq('item_type', 'paper')
+    .not('doi', 'is', null)
+
+  return new Set(
+    (data ?? [])
+      .map((row: { doi: string | null }) => row.doi)
+      .filter((d): d is string => d !== null)
+  )
+}
+
+/** Update arxiv_id on a showcase item */
+export async function updateShowcaseItemArxiv(id: string, arxivId: string) {
+  const { error } = await supabase
+    .from('showcase_items')
+    .update({ arxiv_id: arxivId })
+    .eq('id', id)
+
+  return { error: error?.message ?? null }
 }

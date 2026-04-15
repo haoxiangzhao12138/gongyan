@@ -5,12 +5,16 @@ import { useAuthStore } from '@/store/authStore'
 import { updateProfile } from '@/lib/api/profiles'
 import { markInvitationUsed } from '@/lib/api/invitations'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { Session, User } from '@supabase/supabase-js'
+
+type CallbackStatus = 'loading' | 'success' | 'email_verified' | 'error'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
-  const [status, setStatus] = useState('正在验证...')
+  const [status, setStatus] = useState<CallbackStatus>('loading')
+  const [statusText, setStatusText] = useState('正在验证...')
 
   useEffect(() => {
     handleCallback()
@@ -28,7 +32,6 @@ export default function AuthCallback() {
       (githubIdentity?.identity_data?.user_name as string) ?? null
 
     if (providerToken) {
-      // Save token to credentials table (not readable by other users)
       await supabase.from('github_credentials').upsert({
         user_id: user.id,
         github_token: providerToken,
@@ -37,7 +40,6 @@ export default function AuthCallback() {
           : {}),
       })
 
-      // Save public username to profiles
       if (linkedUsername) {
         await updateProfile(user.id, { github_username: linkedUsername })
       }
@@ -54,7 +56,6 @@ export default function AuthCallback() {
         'identities:',
         user.identities?.map((i) => i.provider)
       )
-      // Still save username if available
       if (linkedUsername) {
         await updateProfile(user.id, { github_username: linkedUsername })
       }
@@ -84,7 +85,8 @@ export default function AuthCallback() {
       await markInvitationUsed(meta.invitation_id, user.id)
     }
 
-    setStatus('验证成功，正在跳转...')
+    setStatus('success')
+    setStatusText('验证成功，正在跳转...')
     navigate('/pending', { replace: true })
   }
 
@@ -93,29 +95,63 @@ export default function AuthCallback() {
     const flow = params.get('flow')
     const code = params.get('code')
 
-    // Step 1: Obtain session (PKCE code exchange or fallback)
+    // Also check hash fragment (some Supabase configs use implicit flow)
+    const hashParams = new URLSearchParams(
+      window.location.hash.replace('#', '')
+    )
+    const accessToken = hashParams.get('access_token')
+    const hashType = hashParams.get('type')
+
     let session: Session | null = null
 
+    // Strategy 1: PKCE code exchange
     if (code) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
       if (error) {
         console.error('Code exchange failed:', error)
-        setStatus('验证失败，请重新操作')
-        setTimeout(() => navigate('/login', { replace: true }), 2000)
-        return
-      }
-      session = data.session
-    } else {
-      const { data, error } = await supabase.auth.getSession()
-      if (error || !data.session) {
-        setStatus('验证失败，请重新注册或登录')
-        setTimeout(() => navigate('/login', { replace: true }), 2000)
+        // PKCE exchange failed — most likely the user opened the email link
+        // in a different browser/device where the code_verifier doesn't exist.
+        // The email IS verified server-side though, so the user can just log in.
+        setStatus('email_verified')
+        setStatusText('邮箱已验证成功')
         return
       }
       session = data.session
     }
 
-    // Step 2: Route to appropriate handler
+    // Strategy 2: Hash fragment (implicit flow fallback)
+    if (!session && accessToken) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: hashParams.get('refresh_token') ?? '',
+      })
+      if (!error && data.session) {
+        session = data.session
+      }
+    }
+
+    // Strategy 3: Existing session in storage
+    if (!session) {
+      const { data } = await supabase.auth.getSession()
+      session = data.session
+    }
+
+    // No session obtained by any method
+    if (!session) {
+      // If this looks like a signup/recovery confirmation (has code or hash type),
+      // the email was verified but we can't establish a session here
+      if (code || hashType === 'signup' || hashType === 'recovery') {
+        setStatus('email_verified')
+        setStatusText('邮箱已验证成功')
+        return
+      }
+      setStatus('error')
+      setStatusText('验证失败，请重新注册或登录')
+      setTimeout(() => navigate('/login', { replace: true }), 3000)
+      return
+    }
+
+    // Session obtained — route to appropriate handler
     if (flow === 'github-link') {
       await handleGitHubLink(session, session.user)
     } else {
@@ -124,10 +160,46 @@ export default function AuthCallback() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="text-sm">{status}</p>
+    <div className="flex min-h-svh items-center justify-center bg-background px-4">
+      <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+        {status === 'loading' && (
+          <>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">{statusText}</p>
+          </>
+        )}
+
+        {status === 'success' && (
+          <>
+            <CheckCircle2 className="h-8 w-8 text-green-500" />
+            <p className="text-sm text-muted-foreground">{statusText}</p>
+          </>
+        )}
+
+        {status === 'email_verified' && (
+          <>
+            <CheckCircle2 className="h-10 w-10 text-green-500" />
+            <div className="space-y-1">
+              <p className="text-base font-medium">{statusText}</p>
+              <p className="text-sm text-muted-foreground">
+                请使用你的邮箱和密码登录，完成注册流程。
+              </p>
+            </div>
+            <Button
+              className="mt-2 w-full"
+              onClick={() => navigate('/login', { replace: true })}
+            >
+              前往登录
+            </Button>
+          </>
+        )}
+
+        {status === 'error' && (
+          <>
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-muted-foreground">{statusText}</p>
+          </>
+        )}
       </div>
     </div>
   )

@@ -14,24 +14,16 @@ import {
   updateHelpLink,
   deleteHelpLink,
 } from '@/lib/api/helpLinks'
+import { GitHubIcon } from '@/components/shared/GitHubIcon'
+import { PLATFORM_LABELS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type {
   ShowcaseItem,
   ShowcaseItemType,
   ShowcaseHelpLink,
   HelpLinkPlatform,
+  PaperRepoLink,
 } from '@/types/database'
-
-const PLATFORM_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  huggingface: 'HuggingFace',
-  zhihu: '知乎',
-  xiaohongshu: '小红书',
-  wechat: '微信',
-  bilibili: 'B站',
-  twitter: 'Twitter/X',
-  other: '其他',
-}
 
 interface ShowcasePaperCardProps {
   item: ShowcaseItem
@@ -39,6 +31,7 @@ interface ShowcasePaperCardProps {
   liked: boolean
   helpLinks?: ShowcaseHelpLink[]
   completedIds?: Set<string>
+  repoLinks?: PaperRepoLink[]
   onItemUpdated?: (updated: ShowcaseItem) => void
   onHelpLinksChanged?: (itemId: string, links: ShowcaseHelpLink[]) => void
 }
@@ -49,6 +42,7 @@ export function ShowcasePaperCard({
   liked,
   helpLinks = [],
   completedIds = new Set(),
+  repoLinks = [],
   onItemUpdated,
   onHelpLinksChanged,
 }: ShowcasePaperCardProps) {
@@ -155,10 +149,47 @@ export function ShowcasePaperCard({
                 {item.title}
                 <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </a>
+              {(item.year || item.venue || (item.citation_count !== null && item.citation_count > 0)) && (
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {item.year && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {item.year}
+                    </Badge>
+                  )}
+                  {item.venue && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      {item.venue}
+                    </span>
+                  )}
+                  {item.citation_count !== null && item.citation_count > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      · 引用 {item.citation_count}
+                    </span>
+                  )}
+                </div>
+              )}
               {item.description && (
                 <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
                   {item.description}
                 </p>
+              )}
+              {/* Linked GitHub repos */}
+              {repoLinks.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {repoLinks.map((repo) => (
+                    <a
+                      key={repo.id}
+                      href={repo.github_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      <GitHubIcon className="h-3 w-3" />
+                      {repo.repo_name ?? 'repo'}
+                      {repo.stars_count > 0 && <span>★{repo.stars_count.toLocaleString()}</span>}
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
             {isOwner && (

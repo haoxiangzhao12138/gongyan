@@ -84,6 +84,9 @@ export function ShowcaseItemForm({
   // Inline help link drafts (only for new items)
   const [helpLinkDrafts, setHelpLinkDrafts] = useState<HelpLinkDraft[]>([])
 
+  const isEdit = !!initial
+  const showHelpLinks = !isEdit && (itemType === 'paper' || itemType === 'github')
+
   // Auto-fetch GitHub repo info when URL changes
   const handleUrlBlur = useCallback(async () => {
     if (itemType !== 'github' || isEdit) return
@@ -150,9 +153,6 @@ export function ShowcaseItemForm({
       setSaving(false)
     }
   }, [open, initial, defaultType])
-
-  const isEdit = !!initial
-  const showHelpLinks = !isEdit && (itemType === 'paper' || itemType === 'github')
 
   function addHelpLinkDraft() {
     const defaultPlatform: HelpLinkPlatform = itemType === 'github' ? 'github' : 'zhihu'
