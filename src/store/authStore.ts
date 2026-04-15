@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database'
 import { supabase } from '@/lib/supabase'
-import { validateHfToken } from '@/lib/api/huggingface'
 
 interface AuthState {
   session: Session | null
@@ -20,9 +19,6 @@ interface AuthState {
   refreshProfile: () => Promise<void>
   linkGitHub: () => Promise<{ error: string | null }>
   unlinkGitHub: () => Promise<{ error: string | null }>
-  linkHuggingFace: (token: string) => Promise<{ error: string | null; username?: string }>
-  unlinkHuggingFace: () => Promise<{ error: string | null }>
-  getHfToken: () => Promise<string | null>
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -54,23 +50,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (session?.user) {
         // After GitHub identity linking, capture provider_token
-        if (event === 'USER_UPDATED' && session.provider_token) {
+        // Implicit flow fires SIGNED_IN; PKCE fires USER_UPDATED
+        if (
+          (event === 'USER_UPDATED' || event === 'SIGNED_IN') &&
+          session.provider_token
+        ) {
           const githubIdentity = session.user.identities?.find(
             (i) => i.provider === 'github'
           )
           const githubUsername =
             (githubIdentity?.identity_data?.user_name as string) ?? null
 
-          // Save token to separate credentials table (not readable by other users)
-          const { error: credErr } = await supabase
-            .from('github_credentials')
-            .upsert({
-              user_id: session.user.id,
-              github_token: session.provider_token,
-              ...(session.provider_refresh_token
-                ? { github_refresh_token: session.provider_refresh_token }
-                : {}),
-            })
+          // Save token via SECURITY DEFINER RPC (no SELECT policy needed)
+          const { error: credErr } = await supabase.rpc('save_github_credentials', {
+            p_github_token: session.provider_token,
+            p_github_refresh_token: session.provider_refresh_token ?? null,
+          })
 
           if (credErr) {
             console.error('Failed to save GitHub credentials:', credErr.message)
@@ -150,6 +145,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await supabase.auth.unlinkIdentity(githubIdentity)
     }
 
+    // Delete stale credentials so the new OAuth flow writes fresh ones
+    if (user) {
+      await supabase
+        .from('github_credentials')
+        .delete()
+        .eq('user_id', user.id)
+    }
+
     const { error } = await supabase.auth.linkIdentity({
       provider: 'github',
       options: {
@@ -164,15 +167,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    const githubIdentity = user?.identities?.find(
-      (i) => i.provider === 'github'
-    )
-    if (githubIdentity) {
-      const { error } = await supabase.auth.unlinkIdentity(githubIdentity)
-      if (error) return { error: error.message }
-    }
 
-    // Also clear profile fields and credentials
+    // Clear DB FIRST — before unlinkIdentity triggers onAuthStateChange
+    // which would re-fetch the profile and restore stale github_username
     const session = get().session
     if (session?.user) {
       await supabase
@@ -186,52 +183,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .eq('id', session.user.id)
     }
 
+    // Now unlink the identity (triggers onAuthStateChange, but DB is already clean)
+    const githubIdentity = user?.identities?.find(
+      (i) => i.provider === 'github'
+    )
+    if (githubIdentity) {
+      const { error } = await supabase.auth.unlinkIdentity(githubIdentity)
+      if (error) return { error: error.message }
+    }
+
     await get().refreshProfile()
     return { error: null }
   },
 
-  linkHuggingFace: async (token: string) => {
-    // Validate the token first
-    const { valid, username, error: validateError } = await validateHfToken(token)
-    if (!valid) return { error: validateError ?? 'HuggingFace Token 无效，请检查后重试' }
-
-    const session = get().session
-    if (!session?.user) return { error: '请先登录' }
-
-    // Store HF token in github_credentials table (reusing secure table).
-    // Use upsert with onConflict to handle both cases (row exists from GitHub binding or not).
-    // Note: github_credentials has no SELECT policy, so we can't check existence first.
-    // Only set huggingface_token — upsert won't overwrite github_token/github_refresh_token.
-    const { error } = await supabase
-      .from('github_credentials')
-      .upsert(
-        { user_id: session.user.id, huggingface_token: token },
-        { onConflict: 'user_id', ignoreDuplicates: false },
-      )
-
-    if (error) return { error: error.message }
-    return { error: null, username }
-  },
-
-  unlinkHuggingFace: async () => {
-    const session = get().session
-    if (!session?.user) return { error: '请先登录' }
-
-    const { error } = await supabase
-      .from('github_credentials')
-      .update({ huggingface_token: null })
-      .eq('user_id', session.user.id)
-
-    if (error) return { error: error.message }
-    return { error: null }
-  },
-
-  getHfToken: async () => {
-    const session = get().session
-    if (!session?.user) return null
-
-    // Use SECURITY DEFINER RPC to avoid exposing github_token to the browser
-    const { data } = await supabase.rpc('get_hf_token')
-    return (data as string | null) ?? null
-  },
 }))

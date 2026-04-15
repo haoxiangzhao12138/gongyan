@@ -197,8 +197,9 @@ export default function StarBoard() {
     await loadData()
   }
 
-  /** Callback when GitHubUserCard stars some links */
-  function handleUserStarred(linkIds: string[], urls: string[]) {
+  /** Callback when GitHubUserCard or HelpLinkRow completes a star */
+  async function handleUserStarred(linkIds: string[], urls: string[]) {
+    // Optimistic local update
     setCompletedIds((prev) => {
       const next = new Set(prev)
       for (const id of linkIds) next.add(id)
@@ -209,6 +210,8 @@ export default function StarBoard() {
       for (const url of urls) next.add(url)
       return next
     })
+    // Reload from DB for accurate completion counts
+    await loadData()
   }
 
   if (loading) {
@@ -350,6 +353,7 @@ export default function StarBoard() {
                 ownerId={group.userId}
                 initialCompleted={completedIds.has(link.id)}
                 githubStarred={githubStarredUrls.has(link.url)}
+                onCompleted={() => loadData()}
                 compact
               />
             ))}

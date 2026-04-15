@@ -133,6 +133,7 @@ export function GitHubUserCard({
               ownerId={userId}
               initialCompleted={completedIds.has(link.id)}
               githubStarred={githubStarredUrls.has(link.url)}
+              onCompleted={() => onStarred([], [])}
               compact
             />
           ))}

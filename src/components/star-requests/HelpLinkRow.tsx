@@ -17,6 +17,7 @@ interface HelpLinkRowProps {
   initialCompleted: boolean
   githubStarred?: boolean
   compact?: boolean
+  onCompleted?: () => void
 }
 
 export function HelpLinkRow({
@@ -25,6 +26,7 @@ export function HelpLinkRow({
   initialCompleted,
   githubStarred = false,
   compact = false,
+  onCompleted,
 }: HelpLinkRowProps) {
   const [completed, setCompleted] = useState(initialCompleted)
   const [count, setCount] = useState(link.completion_count)
@@ -101,6 +103,8 @@ export function HelpLinkRow({
         }
         setPending(false)
       }
+
+      onCompleted?.()
     } finally {
       setStarring(false)
       starringRef.current = false

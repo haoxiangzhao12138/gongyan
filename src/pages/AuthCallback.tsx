@@ -21,8 +21,13 @@ export default function AuthCallback() {
   }, [])
 
   /** Handle GitHub identity linking callback */
-  async function handleGitHubLink(session: Session, user: User) {
-    const providerToken = session.provider_token
+  async function handleGitHubLink(
+    session: Session,
+    user: User,
+    hashProviderToken?: string | null,
+  ) {
+    // Prefer provider_token from hash fragment (implicit flow) over session
+    const providerToken = hashProviderToken || session.provider_token
     const providerRefreshToken = session.provider_refresh_token
 
     const githubIdentity = user.identities?.find(
@@ -32,13 +37,13 @@ export default function AuthCallback() {
       (githubIdentity?.identity_data?.user_name as string) ?? null
 
     if (providerToken) {
-      await supabase.from('github_credentials').upsert({
-        user_id: user.id,
-        github_token: providerToken,
-        ...(providerRefreshToken
-          ? { github_refresh_token: providerRefreshToken }
-          : {}),
+      const { error: credErr } = await supabase.rpc('save_github_credentials', {
+        p_github_token: providerToken,
+        p_github_refresh_token: providerRefreshToken ?? null,
       })
+      if (credErr) {
+        console.error('Failed to save GitHub credentials:', credErr.message)
+      }
 
       if (linkedUsername) {
         await updateProfile(user.id, { github_username: linkedUsername })
@@ -95,32 +100,18 @@ export default function AuthCallback() {
     const flow = params.get('flow')
     const code = params.get('code')
 
-    // Also check hash fragment (some Supabase configs use implicit flow)
+    // Check hash fragment (implicit flow returns tokens here)
     const hashParams = new URLSearchParams(
       window.location.hash.replace('#', '')
     )
     const accessToken = hashParams.get('access_token')
     const hashType = hashParams.get('type')
+    const hashProviderToken = hashParams.get('provider_token')
 
     let session: Session | null = null
 
-    // Strategy 1: PKCE code exchange
-    if (code) {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-      if (error) {
-        console.error('Code exchange failed:', error)
-        // PKCE exchange failed — most likely the user opened the email link
-        // in a different browser/device where the code_verifier doesn't exist.
-        // The email IS verified server-side though, so the user can just log in.
-        setStatus('email_verified')
-        setStatusText('邮箱已验证成功')
-        return
-      }
-      session = data.session
-    }
-
-    // Strategy 2: Hash fragment (implicit flow fallback)
-    if (!session && accessToken) {
+    // Strategy 1: Hash fragment (implicit flow — primary for GitHub link)
+    if (accessToken) {
       const { data, error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: hashParams.get('refresh_token') ?? '',
@@ -128,6 +119,18 @@ export default function AuthCallback() {
       if (!error && data.session) {
         session = data.session
       }
+    }
+
+    // Strategy 2: PKCE code exchange (fallback for email confirmation)
+    if (!session && code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+      if (error) {
+        console.error('Code exchange failed:', error)
+        setStatus('email_verified')
+        setStatusText('邮箱已验证成功')
+        return
+      }
+      session = data.session
     }
 
     // Strategy 3: Existing session in storage
@@ -138,8 +141,6 @@ export default function AuthCallback() {
 
     // No session obtained by any method
     if (!session) {
-      // If this looks like a signup/recovery confirmation (has code or hash type),
-      // the email was verified but we can't establish a session here
       if (code || hashType === 'signup' || hashType === 'recovery') {
         setStatus('email_verified')
         setStatusText('邮箱已验证成功')
@@ -153,7 +154,7 @@ export default function AuthCallback() {
 
     // Session obtained — route to appropriate handler
     if (flow === 'github-link') {
-      await handleGitHubLink(session, session.user)
+      await handleGitHubLink(session, session.user, hashProviderToken)
     } else {
       await handleRegistration(session.user)
     }
