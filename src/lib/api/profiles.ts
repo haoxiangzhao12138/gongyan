@@ -11,6 +11,15 @@ export async function getProfile(userId: string) {
   return { data: data as Profile | null, error: error?.message ?? null }
 }
 
+export async function getAllProfiles() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  return { data: (data as Profile[]) ?? [], error: error?.message ?? null }
+}
+
 export async function updateProfile(
   userId: string,
   updates: Partial<Pick<Profile, 'full_name' | 'bio' | 'research_field' | 'institution' | 'avatar_url' | 'github_username' | 'google_scholar_url'>>

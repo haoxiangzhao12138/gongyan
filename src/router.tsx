@@ -16,6 +16,7 @@ import ProfileEdit from '@/pages/ProfileEdit'
 import Notifications from '@/pages/Notifications'
 import InviteManagement from '@/pages/InviteManagement'
 import Approvals from '@/pages/admin/Approvals'
+import Members from '@/pages/admin/Members'
 import StarBoard from '@/pages/StarBoard'
 
 export const router = createBrowserRouter([
@@ -83,6 +84,14 @@ export const router = createBrowserRouter([
         element: (
           <AdminRoute>
             <Approvals />
+          </AdminRoute>
+        ),
+      },
+      {
+        path: 'admin/members',
+        element: (
+          <AdminRoute>
+            <Members />
           </AdminRoute>
         ),
       },

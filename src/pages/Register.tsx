@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
-import { validateInvitationCode, markInvitationUsed } from '@/lib/api/invitations'
+import { validateInvitationCode, consumeInvitation } from '@/lib/api/invitations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -59,6 +59,14 @@ export default function Register() {
 
     setLoading(true)
 
+    // Atomically consume invitation BEFORE signup to prevent reuse
+    const { consumed, error: consumeError } = await consumeInvitation(validatedInvitation.id)
+    if (consumeError || !consumed) {
+      toast.error('邀请码已被使用', { description: '该邀请码已失效，请使用新的邀请码' })
+      setLoading(false)
+      return
+    }
+
     // Store profile info + invitation in signUp metadata
     // so we can retrieve it after email confirmation
     const { error } = await signUp(email, password, fullName, {
@@ -73,9 +81,6 @@ export default function Register() {
       setLoading(false)
       return
     }
-
-    // Mark invitation as used immediately to prevent reuse
-    await markInvitationUsed(validatedInvitation.id)
 
     setStep('check_email')
     setLoading(false)

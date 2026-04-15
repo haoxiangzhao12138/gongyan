@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { updateProfile } from '@/lib/api/profiles'
-import { markInvitationUsed } from '@/lib/api/invitations'
+import { consumeInvitation } from '@/lib/api/invitations'
 import { toast } from 'sonner'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -87,7 +87,7 @@ export default function AuthCallback() {
     }
 
     if (meta.invitation_id) {
-      await markInvitationUsed(meta.invitation_id, user.id)
+      await consumeInvitation(meta.invitation_id, user.id)
     }
 
     setStatus('success')

@@ -5,6 +5,7 @@ import {
   MessageSquareText,
   User,
   Shield,
+  Users,
   Mail,
   LogOut,
   Star,
@@ -63,6 +64,10 @@ export function Sidebar() {
             <NavLink to="/admin/approvals" className={navLinkClass}>
               <Shield className="h-4 w-4" />
               审批管理
+            </NavLink>
+            <NavLink to="/admin/members" className={navLinkClass}>
+              <Users className="h-4 w-4" />
+              成员管理
             </NavLink>
           </>
         )}

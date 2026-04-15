@@ -67,6 +67,22 @@ export async function getMyInvitations(userId: string) {
   return { data: (data as Invitation[]) ?? [], error: error?.message ?? null }
 }
 
+export async function consumeInvitation(
+  invitationId: string,
+  usedBy?: string
+): Promise<{ consumed: boolean; error: string | null }> {
+  const { data, error } = await supabase.rpc('consume_invitation', {
+    p_invitation_id: invitationId,
+    p_used_by: usedBy ?? null,
+  })
+
+  if (error) {
+    return { consumed: false, error: error.message }
+  }
+
+  return { consumed: !!data, error: null }
+}
+
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const segments = []
