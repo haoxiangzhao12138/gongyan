@@ -1,16 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-}
+const ALLOWED_ORIGINS = [
+  'https://gongyan.pages.dev',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers':
+      'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 function parseOwnerRepo(url: string): { owner: string; repo: string } | null {
@@ -22,8 +24,17 @@ function parseOwnerRepo(url: string): { owner: string; repo: string } | null {
 }
 
 Deno.serve(async (req) => {
+  const cors = getCorsHeaders(req.headers.get('Origin'))
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: cors })
+  }
+
+  function json(body: Record<string, unknown>, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
   }
 
   try {
@@ -35,7 +46,7 @@ Deno.serve(async (req) => {
     // Verify JWT
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return jsonResponse({ error: '未授权' }, 401)
+      return json({ error: '未授权' }, 401)
     }
 
     const {
@@ -44,13 +55,13 @@ Deno.serve(async (req) => {
     } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
     if (authError || !user) {
-      return jsonResponse({ error: '用户验证失败' }, 401)
+      return json({ error: '用户验证失败' }, 401)
     }
 
     // Parse request body
     const { urls } = await req.json()
     if (!Array.isArray(urls) || urls.length === 0) {
-      return jsonResponse({ error: '缺少 urls 参数' }, 400)
+      return json({ error: '缺少 urls 参数' }, 400)
     }
 
     // Read GitHub token from credentials table
@@ -61,7 +72,7 @@ Deno.serve(async (req) => {
       .single()
 
     if (credsError || !creds?.github_token) {
-      return jsonResponse({ error: '请先绑定 GitHub 账号' }, 400)
+      return json({ error: '请先绑定 GitHub 账号' }, 400)
     }
 
     // Limit URLs to prevent abuse
@@ -69,6 +80,7 @@ Deno.serve(async (req) => {
 
     // Check star status for each URL in parallel
     const results: Record<string, boolean> = {}
+    let tokenExpired = false
 
     const checks = limitedUrls.map(async (url: string) => {
       const parsed = parseOwnerRepo(url)
@@ -90,6 +102,12 @@ Deno.serve(async (req) => {
           }
         )
 
+        if (ghResponse.status === 401) {
+          tokenExpired = true
+          results[url] = false
+          return
+        }
+
         // 204 = starred, 404 = not starred
         results[url] = ghResponse.status === 204
       } catch {
@@ -99,8 +117,23 @@ Deno.serve(async (req) => {
 
     await Promise.all(checks)
 
-    return jsonResponse({ results })
+    // If token expired, clear credentials and notify client
+    if (tokenExpired) {
+      await supabase
+        .from('github_credentials')
+        .delete()
+        .eq('user_id', user.id)
+
+      await supabase
+        .from('profiles')
+        .update({ github_username: null })
+        .eq('id', user.id)
+
+      return json({ results: {}, code: 'TOKEN_EXPIRED', error: 'GitHub 授权已过期，请重新绑定' })
+    }
+
+    return json({ results })
   } catch {
-    return jsonResponse({ error: '服务器内部错误' }, 500)
+    return json({ error: '服务器内部错误' }, 500)
   }
 })

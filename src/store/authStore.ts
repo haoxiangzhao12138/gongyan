@@ -230,12 +230,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const session = get().session
     if (!session?.user) return null
 
-    const { data } = await supabase
-      .from('github_credentials')
-      .select('huggingface_token')
-      .eq('user_id', session.user.id)
-      .maybeSingle()
-
-    return (data as { huggingface_token: string | null } | null)?.huggingface_token ?? null
+    // Use SECURITY DEFINER RPC to avoid exposing github_token to the browser
+    const { data } = await supabase.rpc('get_hf_token')
+    return (data as string | null) ?? null
   },
 }))

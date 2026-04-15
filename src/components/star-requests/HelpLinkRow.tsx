@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { ExternalLink, CheckCircle2, Circle, Star, Loader2, ThumbsUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ export function HelpLinkRow({
   const [pending, setPending] = useState(false)
   const [starring, setStarring] = useState(false)
   const [starred, setStarred] = useState(githubStarred)
+  const starringRef = useRef(false)
 
   const profile = useAuthStore((s) => s.profile)
   const hasGitHub = !!profile?.github_username
@@ -59,49 +60,51 @@ export function HelpLinkRow({
   }
 
   async function handleOneClickStar() {
-    if (!currentUserId) return
+    if (!currentUserId || starringRef.current) return
+    starringRef.current = true
     setStarring(true)
 
-    if (!hasGitHub) {
-      const { error } = await useAuthStore.getState().linkGitHub()
-      if (error) {
-        toast.error('GitHub 绑定失败', { description: error })
-        setStarring(false)
+    try {
+      if (!hasGitHub) {
+        const { error } = await useAuthStore.getState().linkGitHub()
+        if (error) {
+          toast.error('GitHub 绑定失败', { description: error })
+        }
+        // linkGitHub triggers redirect — component unmounts
+        return
       }
-      return
-    }
 
-    const result = await starGitHubRepo(link.url)
+      const result = await starGitHubRepo(link.url)
 
-    if (result.code === 'TOKEN_EXPIRED') {
-      toast.error('GitHub 授权已过期', { description: '请重新绑定 GitHub 账号' })
-      await useAuthStore.getState().refreshProfile()
-      setStarring(false)
-      return
-    }
-
-    if (!result.success) {
-      toast.error('Star 失败', { description: result.error ?? '未知错误' })
-      setStarring(false)
-      return
-    }
-
-    setStarred(true)
-    toast.success('Star 成功！')
-
-    if (!completed) {
-      setCompleted(true)
-      setCount((c) => c + 1)
-      setPending(true)
-      const { error } = await completeHelpLink(link.id, currentUserId)
-      if (error) {
-        setCompleted(false)
-        setCount((c) => c - 1)
+      if (result.code === 'TOKEN_EXPIRED') {
+        toast.error('GitHub 授权已过期', { description: '请重新绑定 GitHub 账号' })
+        await useAuthStore.getState().refreshProfile()
+        return
       }
-      setPending(false)
-    }
 
-    setStarring(false)
+      if (!result.success) {
+        toast.error('Star 失败', { description: result.error ?? '未知错误' })
+        return
+      }
+
+      setStarred(true)
+      toast.success('Star 成功！')
+
+      if (!completed) {
+        setCompleted(true)
+        setCount((c) => c + 1)
+        setPending(true)
+        const { error } = await completeHelpLink(link.id, currentUserId)
+        if (error) {
+          setCompleted(false)
+          setCount((c) => c - 1)
+        }
+        setPending(false)
+      }
+    } finally {
+      setStarring(false)
+      starringRef.current = false
+    }
   }
 
   /** Open HF paper page and auto-mark as completed */

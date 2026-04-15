@@ -1,16 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-}
+const ALLOWED_ORIGINS = [
+  'https://gongyan.pages.dev',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers':
+      'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 /** Try refreshing an expired GitHub token. Returns new token or null. */
@@ -55,8 +57,17 @@ async function starRepo(token: string, owner: string, repo: string) {
 }
 
 Deno.serve(async (req) => {
+  const cors = getCorsHeaders(req.headers.get('Origin'))
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: cors })
+  }
+
+  function json(body: Record<string, unknown>, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
   }
 
   try {
@@ -68,7 +79,7 @@ Deno.serve(async (req) => {
     // Verify JWT
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return jsonResponse({ error: '未授权' }, 401)
+      return json({ error: '未授权' }, 401)
     }
 
     const {
@@ -77,19 +88,19 @@ Deno.serve(async (req) => {
     } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
     if (authError || !user) {
-      return jsonResponse({ error: '用户验证失败' }, 401)
+      return json({ error: '用户验证失败' }, 401)
     }
 
     // Parse request body
     const { url } = await req.json()
     if (!url || typeof url !== 'string') {
-      return jsonResponse({ error: '缺少 URL 参数' }, 400)
+      return json({ error: '缺少 URL 参数' }, 400)
     }
 
     // Extract owner/repo from GitHub URL
     const match = url.match(/github\.com\/([^/]+)\/([^/]+)/)
     if (!match) {
-      return jsonResponse({ error: '无效的 GitHub 仓库 URL' }, 400)
+      return json({ error: '无效的 GitHub 仓库 URL' }, 400)
     }
     const owner = match[1]
     const repo = match[2].replace(/\.git$/, '').split('?')[0].split('#')[0]
@@ -102,14 +113,14 @@ Deno.serve(async (req) => {
       .single()
 
     if (credsError || !creds?.github_token) {
-      return jsonResponse({ error: '请先绑定 GitHub 账号' }, 400)
+      return json({ error: '请先绑定 GitHub 账号' }, 400)
     }
 
     // Call GitHub API to star the repo
     let ghResponse = await starRepo(creds.github_token, owner, repo)
 
     if (ghResponse.status === 204 || ghResponse.status === 304) {
-      return jsonResponse({ success: true })
+      return json({ success: true })
     }
 
     // On 401, try refreshing the token before giving up
@@ -140,7 +151,7 @@ Deno.serve(async (req) => {
           ghResponse = await starRepo(refreshed.access_token, owner, repo)
 
           if (ghResponse.status === 204 || ghResponse.status === 304) {
-            return jsonResponse({ success: true })
+            return json({ success: true })
           }
         }
       }
@@ -158,7 +169,7 @@ Deno.serve(async (req) => {
         .update({ github_username: null })
         .eq('id', user.id)
 
-      return jsonResponse(
+      return json(
         { success: false, error: 'GitHub 授权已过期，请重新绑定', code: 'TOKEN_EXPIRED' },
         200
       )
@@ -176,7 +187,7 @@ Deno.serve(async (req) => {
         .update({ github_username: null })
         .eq('id', user.id)
 
-      return jsonResponse(
+      return json(
         {
           success: false,
           error: 'GitHub 权限不足（缺少 public_repo scope），请解绑后重新绑定',
@@ -188,18 +199,18 @@ Deno.serve(async (req) => {
     }
 
     if (ghResponse.status === 404) {
-      return jsonResponse(
+      return json(
         { success: false, error: '仓库不存在或无权访问，请检查 GitHub 授权范围', code: 'REPO_NOT_FOUND' },
         200
       )
     }
 
     const errorBody = await ghResponse.text()
-    return jsonResponse(
+    return json(
       { success: false, error: `GitHub API 错误: ${ghResponse.status}`, detail: errorBody },
       200
     )
   } catch (_err) {
-    return jsonResponse({ error: '服务器内部错误' }, 500)
+    return json({ error: '服务器内部错误' }, 500)
   }
 })

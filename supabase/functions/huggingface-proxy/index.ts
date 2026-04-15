@@ -1,15 +1,28 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = [
+  'https://gongyan.pages.dev',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]
+
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers':
+      'authorization, x-client-info, apikey, content-type',
+  }
 }
+
+// Module-level json helper for handler functions that don't have access to req.
+// The cors headers are set once per request in Deno.serve and stored here.
+let _cors: Record<string, string> = getCorsHeaders(null)
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ..._cors, 'Content-Type': 'application/json' },
   })
 }
 
@@ -29,8 +42,10 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
  * HF intentionally blocks programmatic likes to prevent spam.
  */
 Deno.serve(async (req) => {
+  _cors = getCorsHeaders(req.headers.get('Origin'))
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: _cors })
   }
 
   try {
