@@ -145,6 +145,27 @@ export async function fetchUserPaperDois(userId: string): Promise<Set<string>> {
   )
 }
 
+/** Get normalized "owner/repo" strings for existing github showcase items */
+export async function fetchUserGitHubUrls(userId: string): Promise<Set<string>> {
+  const { data } = await supabase
+    .from('showcase_items')
+    .select('url')
+    .eq('user_id', userId)
+    .eq('item_type', 'github')
+
+  return new Set(
+    (data ?? [])
+      .map((row: { url: string }) => {
+        const match = row.url.match(/github\.com\/([^/]+)\/([^/]+)/)
+        if (!match) return null
+        const owner = match[1]
+        const repo = match[2].replace(/\.git$/, '').split('?')[0].split('#')[0]
+        return `${owner}/${repo}`.toLowerCase()
+      })
+      .filter((s): s is string => s !== null)
+  )
+}
+
 /** Update arxiv_id on a showcase item */
 export async function updateShowcaseItemArxiv(id: string, arxivId: string) {
   const { error } = await supabase

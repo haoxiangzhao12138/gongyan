@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, Link2, ExternalLink, BookOpen, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, Link2, ExternalLink, BookOpen, Search, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ShowcaseItemForm, type ShowcaseItemFormValues } from './ShowcaseItemForm'
 import { HelpLinkForm } from './HelpLinkForm'
 import { PaperImportDialog } from './PaperImportDialog'
+import { RepoImportDialog } from './RepoImportDialog'
 import { parseGitHubOwnerRepo } from '@/lib/api/github'
 import { GitHubIcon } from '@/components/shared/GitHubIcon'
 import {
@@ -59,7 +60,9 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingLinkId, setDeletingLinkId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [repoImportOpen, setRepoImportOpen] = useState(false)
   const [existingDois, setExistingDois] = useState<Set<string>>(new Set())
+  const [existingGitHubUrls, setExistingGitHubUrls] = useState<Set<string>>(new Set())
   const [repoLinksMap, setRepoLinksMap] = useState<Map<string, PaperRepoLink[]>>(new Map())
   const [enrichingId, setEnrichingId] = useState<string | null>(null)
 
@@ -106,6 +109,21 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
         .map((item) => item.doi as string)
     )
     setExistingDois(dois)
+
+    // Build existing GitHub URLs set for dedup
+    const ghUrls = new Set(
+      data
+        .filter((item) => item.item_type === 'github')
+        .map((item) => {
+          const m = item.url.match(/github\.com\/([^/]+)\/([^/]+)/)
+          if (!m) return null
+          const owner = m[1]
+          const repo = m[2].replace(/\.git$/, '').split('?')[0].split('#')[0]
+          return `${owner}/${repo}`.toLowerCase()
+        })
+        .filter((s): s is string => s !== null)
+    )
+    setExistingGitHubUrls(ghUrls)
 
     // Load help links for paper and github items
     const linkable = data.filter((item) => item.item_type === 'paper' || item.item_type === 'github')
@@ -605,10 +623,18 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
               <GitHubIcon className="h-4 w-4" />
               GitHub 项目
             </CardTitle>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleAdd('github')}>
-              <Plus className="h-3.5 w-3.5" />
-              添加项目
-            </Button>
+            <div className="flex items-center gap-2">
+              {hasGitHub && (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setRepoImportOpen(true)}>
+                  <Download className="h-3.5 w-3.5" />
+                  导入仓库
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleAdd('github')}>
+                <Plus className="h-3.5 w-3.5" />
+                添加项目
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -671,6 +697,28 @@ export function ShowcaseEditSection({ userId }: ShowcaseEditSectionProps) {
             const next = new Set(prev)
             for (const item of newItems) {
               if (item.doi) next.add(item.doi)
+            }
+            return next
+          })
+        }}
+      />
+
+      <RepoImportDialog
+        open={repoImportOpen}
+        onOpenChange={setRepoImportOpen}
+        userId={userId}
+        existingGitHubUrls={existingGitHubUrls}
+        onImported={(newItems) => {
+          setItems((prev) => [...prev, ...newItems])
+          setExistingGitHubUrls((prev) => {
+            const next = new Set(prev)
+            for (const item of newItems) {
+              const m = item.url.match(/github\.com\/([^/]+)\/([^/]+)/)
+              if (m) {
+                const owner = m[1]
+                const repo = m[2].replace(/\.git$/, '').split('?')[0].split('#')[0]
+                next.add(`${owner}/${repo}`.toLowerCase())
+              }
             }
             return next
           })
